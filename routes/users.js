@@ -1,116 +1,66 @@
-var express = require("express");
+var express = require('express');
 var router = express.Router();
-const puppeteer = require("puppeteer");
+const puppeteer = require('puppeteer');
 
 /* GET home page. */
-router.get("/", function (req, res, next) {
+router.get('/', function (req, res, next) {
   (async () => {
+
     const startDate = new Date();
 
-    const browser = await puppeteer.launch({ headless: false });
+    const browser = await puppeteer.launch()
+    let page = await browser.newPage()
 
-    let page = await browser.newPage();
+    // 一覧画面の処理
+    const URL = "https://www.pet-home.jp/chiba/boy/"
+    await page.goto(URL, { waitUntil: 'domcontentloaded' })
+    const urllist = await page.evaluate(function () {
+      // SELECTOR_URLLIST
+      const nodelist = document.querySelectorAll("li.contribute_result > div.inner")
+      let retlist = []
+      if (nodelist.length > 0) {
+        nodelist.forEach(function (node) {
+          // SELECTOR_URL
+          retlist.push(node.querySelector("h3.title > a").href)
+        })
+      }
+      return retlist
+    })
 
-    const URL = "https://www.yamori-yoyaku.jp/studio/OfficeLogin.htm";
-    await page.goto(URL, { waitUntil: "domcontentloaded" });
-
-    // ログイン
-    await page.type('input[name="in_office"]', "4000143");
-    await page.type('input[name="in_opassword"]', "PS10001SP");
-    await page.click(
-      "body > table > tbody > tr > td > table > tbody > tr:nth-child(1) > td > form > table:nth-child(2) > tbody > tr > td:nth-child(2) > input"
-    );
-
-    await page.waitFor(1000);
-    // await page.waitForNavigation({waitUntil: 'domcontentloaded'});
-
-    // 管理画面から「管理者メニュー」をクリック
-    const menu = await page.$(
-      "body > table > tbody > tr > td > table > tbody > tr > td > table:nth-child(2) > tbody > tr:nth-child(3) > td:nth-child(2) > input[type=image]:nth-child(6)"
-    );
-    await menu.click();
-
-    await page.waitFor(2000);
-
-    // 新しく開いたページを取得
-    let newPage = await getNewPage(page);
-
-    // パスワードの設定
-    await newPage.type('input[name="in_managerpassword"]', "PS10001SP");
-    const inputElement = await newPage.$("input[type=submit]");
-    await inputElement.click();
-
-    await newPage.waitFor(2000);
-
-    // 「ダウンロード」のクリック
-    await newPage.click(
-      "body > div:nth-child(3) > table > tbody > tr > th:nth-child(6) > img"
-    );
-
-    await newPage.waitFor(2000);
-
-    // 「登録車情報ダウンロード」のクリック
-    await newPage.click(
-      "#inbody > div > div:nth-child(2) > div:nth-child(1) > div.waku_5 > img"
-    );
-
-    await newPage.waitFor(2000);
-
-    // 新しく開いたページを取得
-    let newPageTouroku = await getNewPage(newPage);
-
-    // Promptが出たら必ずOKとする
-    newPageTouroku.on('dialog', async dialog => {
-      await dialog.accept();
-    });
-
-    //
-    await newPageTouroku.select('select[name="start_y"]', '2020');
-    await newPageTouroku.select('select[name="start_m"]', '12');
-    await newPageTouroku.select('select[name="end_y"]', '2020');
-    await newPageTouroku.select('select[name="end_m"]', '12');
-
-    // 「項目名-全選択」をクリックする
-    await newPageTouroku.click(
-      "#inbody > form > table > tbody > tr:nth-child(2) > td.reserve_screen > a:nth-child(2)"
-    );
-    // 「登録者データ」をクリックする
-    await newPageTouroku.click("#inbody > form > p > input.btn_150-30");
-
-    await newPage.waitFor(2000);
-
-    // 新しく開いたページを取得
-    let newPageResult = await getNewPage(newPageTouroku);
-
-    const a_tag = await newPageResult.$('a');
-    if (a_tag) {
-      console.log('ダウンロードデータあり')
-      await a_tag.click();
-      await page.waitFor(10000);
-    } else {
-      console.log('ダウンロードデータなし')
+    // 個別ページの取得
+    let child_content_list = []
+    // for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < urllist.length; i++) {
+      await page.goto(urllist[i], { waitUntil: 'domcontentloaded' })
+      let child_content = await page.evaluate(() => {
+        return {
+          title: document.querySelector("h3.main_title").textContent, //SELECTOR_TITLE
+          date: document.querySelectorAll("ul.bookmark_view_date_wrap > li.date")[0].textContent, //SELECTOR_KEISAIBI
+          datelimit: document.querySelectorAll("ul.id_data_wrap > li.limit")[0].innerText, //SELECTOR_KEISAIKIGENBI
+          boshuNo: document.querySelectorAll("ul.id_data_wrap > li.id")[0].innerText //SELECTOR_BOSHUNO
+        }
+      })
+      child_content.url = urllist[i];
+      if (urllist[i].indexOf("dogs") > -1) {
+        child_content.shurui = "犬";
+      } else if (urllist[i].indexOf("cats") > -1) {
+        child_content.shurui = "猫";
+      } else if (urllist[i].indexOf("small") > -1) {
+        child_content.shurui = "小動物";
+      } else if (urllist[i].indexOf("fishs") > -1) {
+        child_content.shurui = "さかな";
+      } else if (urllist[i].indexOf("birds") > -1) {
+        child_content.shurui = "とり";
+      } else if (urllist[i].indexOf("reptiles") > -1) {
+        child_content.shurui = "は虫類・その他";
+      }
+      await child_content_list.push(child_content)
     }
-
-    res.render("users", { title: "AAAAA" });
-
-    /**
-     * 新しく開いたページを取得
-     * @param {page} page もともと開いていたページ
-     * @returns {page} 別タブで開いたページ
-     */
-    async function getNewPage(page) {
-      const pageTarget = await page.target();
-      const newTarget = await browser.waitForTarget(
-        (target) => target.opener() === pageTarget
-      );
-      const newPage = await newTarget.page();
-      await newPage.waitForSelector("body");
-      return newPage;
-    }
-
+    const endDate = new Date();
+    await res.render('users', { objlist: child_content_list, procInterval: (endDate.getTime() - startDate.getTime())/1000 });
     await browser.close()
-
-  })();
-});
+  })()
+})
 
 module.exports = router;
+
